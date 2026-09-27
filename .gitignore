@@ -1,1 +1,3 @@
 student_resource/*
+entity_resolution/data/train
+entity_resolution/data/test

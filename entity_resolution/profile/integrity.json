@@ -1,0 +1,65 @@
+{
+  "files": {
+    "train_source1": {
+      "exists": true,
+      "rows": 2206821,
+      "bytes": 210069713,
+      "sha1_head": "76655f22ea4a576fb57ab131d5caa442f69d0e1f"
+    },
+    "train_source2": {
+      "exists": true,
+      "rows": 5034616,
+      "bytes": 489301488,
+      "sha1_head": "812f33c0c4746a520e4c5e46d6e5ad0ca49ff0f8"
+    },
+    "train_source3": {
+      "exists": true,
+      "rows": 5285603,
+      "bytes": 503705637,
+      "sha1_head": "b23ede9fd5dab0468f87154d3ceece273dc2638e"
+    },
+    "train_ground_truth": {
+      "exists": true,
+      "rows": 2206821,
+      "bytes": 127015583,
+      "sha1_head": "b45bc85fba93f946a67b6882d980536307e6eae8"
+    },
+    "test_source1": {
+      "exists": true,
+      "rows": 1732544,
+      "bytes": 175022086,
+      "sha1_head": "5998156684dbd626aebe91a9682bb4636b6d2b25"
+    },
+    "test_source2": {
+      "exists": true,
+      "rows": 4887273,
+      "bytes": 509456422,
+      "sha1_head": "3f25cf5e5611e82ac8faa42e3af6f26ff327e374"
+    },
+    "test_source3": {
+      "exists": true,
+      "rows": 5082316,
+      "bytes": 506002772,
+      "sha1_head": "070e6b35bfb841b43804aafa5932da5de6492cc0"
+    }
+  },
+  "malformed_rows": {
+    "train_source1": 0,
+    "train_source2": 0,
+    "train_source3": 0,
+    "test_source1": 0,
+    "test_source2": 0,
+    "test_source3": 0
+  },
+  "duplicate_entity_ids": {
+    "train_source1": 0,
+    "train_source2": 0,
+    "train_source3": 0,
+    "test_source1": 0,
+    "test_source2": 0,
+    "test_source3": 0
+  },
+  "gt_covers_all_s1": true,
+  "matched_ids_resolvable": true,
+  "n_matched_ids": 7638365
+}

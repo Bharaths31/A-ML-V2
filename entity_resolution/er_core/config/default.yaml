@@ -1,0 +1,79 @@
+# Default configuration. Mirrors src/config/config.py:DEFAULTS.
+# Every tunable lives here; nothing is hard-coded in the stages.
+seed: 42
+
+paths:
+  train_dir: dataset/train
+  test_dir: dataset/test
+  out_dir: output
+  cache_dir: artifacts
+
+canonicalize:
+  strip_punct: true
+  ascii_fold: true
+
+blocking:
+  layers:
+    A1: true   # canonical-name exact
+    A2: true   # name-minus-suffix exact
+    A3: true   # sorted-token-set exact
+    A5: true   # (pin, first-name-token)
+    A6: true   # (city, first-name-token)
+    B1: true   # char-3-gram MinHash LSH on name
+    B2: true   # token MinHash LSH on street tokens
+    B3: true   # TF-IDF char-3-gram top-k on name
+    C1: true   # (country, rare-name-token) safety net
+    C2: true   # (house number, first-name-token)
+  minhash:
+    num_perm: 128
+    bands: 32
+    shingle: char3
+  tfidf_topk:
+    k: 8
+    floor: 0.0
+    chunk: 128
+  mass:
+    per_layer_topk: 8
+    per_entity_cap: 12
+    keep_exact_keys: true
+  rare_token:
+    rare_max_df: 5
+    min_token_len: 4
+
+features:
+  use_embeddings: false
+
+model:
+  backend: lightgbm
+  lgbm:
+    n_estimators: 500
+    learning_rate: 0.05
+    num_leaves: 63
+    min_child_samples: 20
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    deterministic: true
+    verbosity: -1
+  # keep all blocked candidates as negatives (hard negatives dominate);
+  # neg_random_cap bounds extreme cases only.
+  neg_random_cap: 200000
+  hard_negative_rounds: 0
+
+calibration:
+  method: isotonic
+  fold_frac: 0.2
+
+decision:
+  m_hat_floor: 0.5
+  lambda: 1.0
+  q_blend: 0.5        # weight on singleton-classifier q vs prod(1-p)
+  mc_draws: 500
+  use_mc_in_tests: true
+
+validation:
+  test_frac: 0.2
+  calib_frac: 0.2
+  min_positives: 5
+
+submission:
+  max_candidates: 15

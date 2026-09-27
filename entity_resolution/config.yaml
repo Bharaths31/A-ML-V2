@@ -1,0 +1,119 @@
+# V2 Business Entity Resolution — master configuration.
+# Every tunable lives here; nothing hard-coded in stages.
+seed: 42
+
+paths:
+  data_root: data
+  train_dir: data/train
+  test_dir: data/test
+  out_dir: output
+  cache_dir: cache
+  profile_dir: profile
+  models_dir: models
+
+canonicalize:
+  strip_punct: true
+  ascii_fold: true
+
+blocking:
+  country_partition: true        # decisive scale win: matches are same-country (measured 100%)
+  layers:
+    A1: true   # canonical-name exact
+    A2: true   # name-minus-suffix exact
+    A3: true   # sorted-token-set exact
+    A5: true   # (pin, first-name-token)
+    A6: true   # (city, first-name-token)
+    B1: false  # char-3-gram MinHash LSH — off by default at this scale (16GB)
+    B2: false  # token MinHash LSH on street tokens — off by default
+    B3: true   # TF-IDF char-3-gram top-k on name
+    C1: true   # (country, rare-name-token) safety net
+    C2: true   # (house number, first-name-token)
+  minhash:
+    num_perm: 64
+    bands: 16
+    shingle: char3
+  tfidf_topk:
+    k: 8
+    floor: 0.0
+    chunk: 128
+    min_df: 2          # kill hapax trigrams that blow memory
+    max_df: 0.01       # drop trigrams in >1% of docs (inc/llc/pvt)
+  mass:
+    per_layer_topk: 8
+    per_entity_cap: 12
+    keep_exact_keys: true
+  rare_token:
+    rare_max_df: 5
+    min_token_len: 4
+
+features:
+  use_embeddings: false
+  chunk_s1: 25000
+
+model:
+  backend: lightgbm
+  lgbm:
+    n_estimators: 500
+    learning_rate: 0.05
+    num_leaves: 63
+    min_child_samples: 20
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    deterministic: true
+    verbosity: -1
+  neg_random_cap: 200000
+  hard_negative_rounds: 0
+
+calibration:
+  method: isotonic
+  fold_frac: 0.2
+
+decision:
+  m_hat_floor: 0.5
+  lambda: 1.0
+  q_blend: 0.5
+  mc_draws: 500
+  use_mc_in_tests: true
+
+validation:
+  test_frac: 0.2
+  calib_frac: 0.2
+  min_positives: 5
+
+# Profiler-driven minimal training set (replaces brute-force full-fit training)
+training:
+  minimal_fit:
+    enabled: true
+    round1_entities: 300000
+    probe_entities: 150000
+    round2_max_add: 150000
+    calib_entities: 100000
+    val_entities: 200000
+    hard_topk: 6
+    easy_frac: 0.10
+    keep_singleton_cands: all
+    strata:
+      - country
+      - singleton
+      - fanout_bucket
+      - propensity
+      - script
+      - addr_completeness
+      - weak_layer
+      - competitor_density
+    hard_weights:
+      cross_script: 2.0
+      weak_layer: 2.0
+      no_pin: 1.5
+      fanout_1: 1.5
+      fanout_5plus: 1.5
+      competitor_dense: 2.0
+  # coarse fallback (ignored when minimal_fit.enabled = true)
+  subsample_fit_entities: 1.0
+
+profiler:
+  sample_s1: 100000
+  blocking_sim: true
+
+submission:
+  max_candidates: 15

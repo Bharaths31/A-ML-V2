@@ -1,0 +1,16 @@
+corp,corporation,co,company
+inc,incorporated
+ltd,limited
+llc
+llp
+lp
+pvt,private,pte
+plc
+gmbh,mbh
+sarl
+sas,sasu
+sa
+sci
+snc
+eurl
+india
