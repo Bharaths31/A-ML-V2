@@ -423,6 +423,95 @@ def _scan_source(path: str) -> dict[str, Any]:
     }
 
 
+def _gt_analysis(data_root: str, s1_country: dict[str, str]) -> dict[str, Any]:
+    gt_path = _path(data_root, "train", "train_ground_truth.tsv")
+    if not os.path.exists(gt_path):
+        return {}
+
+    total = 0
+    empty = 0
+    fanout_counts = Counter()
+    has_s2 = 0
+    has_s3 = 0
+    both = 0
+    fan_by_country = defaultdict(list)
+    singleton_by_country = Counter()
+    nonempty_by_country = Counter()
+    cross_country = 0
+    total_pairs = 0
+
+    # resolve country of matched ids (expensive but one-time)
+    matched = set()
+    with open(gt_path, "r", encoding="utf-8") as f:
+        next(f, None)
+        for line in f:
+            p = line.rstrip("\n").split("\t")
+            if len(p) < 2:
+                continue
+            ids = _split_ids(p[1])
+            matched.update(ids)
+    match_country: dict[str, str] = {}
+    for key in ["train_source2.tsv", "train_source3.tsv"]:
+        path = _path(data_root, "train", key)
+        if not os.path.exists(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            next(f, None)
+            for line in f:
+                p = line.rstrip("\n").split("\t")
+                if len(p) == 4 and p[0].strip() in matched:
+                    match_country[p[0].strip()] = p[3].strip()
+
+    with open(gt_path, "r", encoding="utf-8") as f:
+        next(f, None)
+        for line in f:
+            p = line.rstrip("\n").split("\t")
+            if len(p) < 2:
+                continue
+            total += 1
+            s1 = p[0].strip()
+            ids = _split_ids(p[1])
+            c1 = s1_country.get(s1, "?")
+            if not ids:
+                empty += 1
+                singleton_by_country[c1] += 1
+                continue
+            k = len(ids)
+            fanout_counts[k] += 1
+            fan_by_country[c1].append(k)
+            nonempty_by_country[c1] += 1
+            total_pairs += k
+            if any(x.startswith("S2-") for x in ids):
+                has_s2 += 1
+            if any(x.startswith("S3-") for x in ids):
+                has_s3 += 1
+            if any(x.startswith("S2-") for x in ids) and any(x.startswith("S3-") for x in ids):
+                both += 1
+            for mid in ids:
+                if match_country.get(mid, c1) != c1:
+                    cross_country += 1
+
+    nonempty = total - empty
+    avg_fan = sum((k * v) for k, v in fanout_counts.items()) / max(nonempty, 1)
+    return {
+        "rows": total,
+        "singletons": {"count": empty, "rate": round(empty / max(total, 1), 6),
+                       "by_country": dict(singleton_by_country)},
+        "nonempty": nonempty,
+        "avg_fanout": round(avg_fan, 3),
+        "max_fanout": max(fanout_counts.keys()) if fanout_counts else 0,
+        "fanout_distribution": dict(sorted(fanout_counts.items())),
+        "propensity": {
+            "has_s2": round(has_s2 / max(nonempty, 1), 4),
+            "has_s3": round(has_s3 / max(nonempty, 1), 4),
+            "both": round(both / max(nonempty, 1), 4),
+        },
+        "total_true_pairs": total_pairs,
+        "cross_country_pairs": cross_country,
+        "avg_fanout_by_country": {c: round(sum(vs) / max(len(vs), 1), 3) for c, vs in fan_by_country.items()},
+    }
+
+
 def run_profile(data_root: str, sample_s1: int = 100000, seed: int = 42) -> dict[str, Any]:
     random.seed(seed)
 

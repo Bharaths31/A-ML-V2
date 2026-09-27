@@ -7,11 +7,19 @@ Run from the `entity_resolution/` folder:
 
 What it does:
     1. Checks Python version (3.11+ recommended).
-    2. Creates a virtual environment at `.venv`.
-    3. Upgrades pip and installs `requirements.txt`.
-    4. Creates the unified `data/` folder.
-    5. Locates `student_resource/` and copies train/test/utils/Documentation_template.md into `data/`.
-    6. Prints the activation command for the developer.
+    2. Detects NVIDIA GPU / CUDA and saves `cuda_status.json`.
+    3. Creates a virtual environment at `.venv`.
+    4. Upgrades pip and installs `requirements.txt`.
+    5. If a GPU is detected, attempts to ensure GPU-enabled LightGBM (conda first, then prints manual fallback).
+    6. Creates the unified `data/` folder.
+    7. Locates `student_resource/` and copies train/test/utils/Documentation_template.md into `data/`.
+    8. Prints the activation command for the developer.
+
+Flags:
+    --cpu            Force CPU-only mode.
+    --gpu            Force GPU mode (will fall back to CPU if GPU unavailable).
+    --cuda-tag TAG   Override CUDA tag for logging (e.g. cu124).
+    --skip-venv      Skip venv creation and only copy data.
 """
 from __future__ import annotations
 
@@ -22,6 +30,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from cuda_utils import detect_nvidia_gpu, test_lightgbm_gpu, save_status, load_status
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 VENV_DIR = PROJECT_ROOT / ".venv"
@@ -36,7 +46,7 @@ DEFAULT_STUDENT_RESOURCE_SEARCH = [
 
 
 def log(msg: str) -> None:
-    print(f"[setup] {msg}")
+    print(f"[setup] {msg}", flush=True)
 
 
 def find_student_resource(user_path: str | None) -> Path | None:
@@ -117,6 +127,54 @@ def install_requirements(venv_python: Path) -> None:
         log("WARNING: requirements.txt not found")
 
 
+def ensure_gpu_lightgbm(venv_python: Path, gpu_info: dict | None, force_gpu: bool) -> bool:
+    """Attempt to install/enable GPU LightGBM. Return True if GPU training works."""
+    if not gpu_info and not force_gpu:
+        return False
+
+    log("GPU detected; probing / enabling GPU LightGBM")
+    # First test if the pip-installed LightGBM already has GPU support.
+    if test_lightgbm_gpu(str(venv_python)):
+        log("LightGBM GPU already works")
+        return True
+
+    # Try conda-forge if conda is available (most reliable Windows GPU path).
+    conda = shutil.which("conda")
+    if conda:
+        log("Attempting conda-forge LightGBM GPU install...")
+        try:
+            subprocess.check_call(
+                [conda, "install", "-y", "-p", str(VENV_DIR), "-c", "conda-forge", "lightgbm"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            if test_lightgbm_gpu():
+                log("LightGBM GPU enabled via conda-forge")
+                return True
+        except Exception as e:
+            log(f"conda-forge install failed: {e}")
+
+    # Fallback: try source build with CUDA. This often fails on Windows without MSVC/CMake,
+    # so we catch and report rather than crash.
+    log("Attempting pip source build of LightGBM with CUDA (this may take minutes)...")
+    try:
+        subprocess.check_call(
+            [str(venv_python), "-m", "pip", "install", "--force-reinstall",
+             "--no-binary", ":all:", "lightgbm"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        if test_lightgbm_gpu():
+            log("LightGBM GPU enabled via source build")
+            return True
+    except Exception as e:
+        log(f"Source build failed: {e}")
+
+    log("WARNING: GPU detected but GPU-enabled LightGBM could not be installed automatically.")
+    log("  The pipeline will fall back to CPU. To enable GPU manually, run one of:")
+    log("    conda install -c conda-forge lightgbm")
+    log("    or build LightGBM from source with USE_CUDA=ON")
+    return False
+
+
 def print_activation(venv: Path) -> None:
     if platform.system().lower() == "windows":
         activate = venv / "Scripts" / "activate.bat"
@@ -139,12 +197,29 @@ def main() -> int:
                         help="Path to student_resource folder (auto-detected if omitted)")
     parser.add_argument("--skip-venv", action="store_true",
                         help="Skip venv creation and only copy data")
+    parser.add_argument("--cpu", "--force-cpu", dest="force_cpu", action="store_true",
+                        help="Force CPU-only mode")
+    parser.add_argument("--gpu", "--force-gpu", dest="force_gpu", action="store_true",
+                        help="Force GPU mode")
+    parser.add_argument("--cuda-tag", type=str, default=None,
+                        help="Override CUDA tag (e.g. cu124)")
     args = parser.parse_args()
 
     if sys.version_info < (3, 11):
         log("WARNING: Python 3.11+ is recommended")
 
     DATA_DIR.mkdir(exist_ok=True)
+
+    # 1. GPU detection (before venv so the user sees it early)
+    gpu_info = None
+    if args.force_cpu:
+        log("Forcing CPU mode as requested")
+    else:
+        if args.cuda_tag:
+            log(f"Using explicit CUDA tag: {args.cuda_tag}")
+        gpu_info = detect_nvidia_gpu()
+        if gpu_info and args.cuda_tag:
+            gpu_info["tag"] = args.cuda_tag
 
     src_res = find_student_resource(args.student_resource)
     if src_res:
@@ -160,8 +235,37 @@ def main() -> int:
         venv = create_venv()
         venv_python = get_venv_python(venv)
         install_requirements(venv_python)
+
+        # Attempt GPU LightGBM enablement
+        gpu_works = False
+        if gpu_info or args.force_gpu:
+            gpu_works = ensure_gpu_lightgbm(venv_python, gpu_info, args.force_gpu)
+
+        # Re-probe in case base install already had GPU
+        if not gpu_works and not args.force_cpu:
+            gpu_works = test_lightgbm_gpu(str(venv_python))
+
+        status = {
+            "gpu_detected": gpu_info is not None,
+            "gpu_info": gpu_info,
+            "force_cpu": args.force_cpu,
+            "force_gpu": args.force_gpu,
+            "lightgbm_gpu_works": gpu_works,
+            "platform": platform.system(),
+        }
     else:
         venv = VENV_DIR
+        status = {
+            "gpu_detected": gpu_info is not None,
+            "gpu_info": gpu_info,
+            "force_cpu": args.force_cpu,
+            "force_gpu": args.force_gpu,
+            "lightgbm_gpu_works": False,
+            "skipped_venv": True,
+        }
+
+    save_status(str(PROJECT_ROOT), status)
+    log(f"CUDA/GPU status saved to cuda_status.json: {status}")
 
     print_activation(venv)
     return 0

@@ -61,6 +61,9 @@ model:
     bagging_fraction: 0.8
     deterministic: true
     verbosity: -1
+    device: auto        # auto | cpu | gpu
+    gpu_platform_id: 0
+    gpu_device_id: 0
   neg_random_cap: 200000
   hard_negative_rounds: 0
 

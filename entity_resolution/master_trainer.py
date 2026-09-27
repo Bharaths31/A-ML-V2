@@ -41,6 +41,25 @@ from er_core.models.calibration import fit_calibrator, apply_calibrator, save_ca
 from er_core.models.singleton_model import train_singleton_model, predict_singleton, save_model as save_singleton_model, load_singleton_model
 from er_core.postprocess.output_writer import write_outputs
 from er_core.utils.validate_submission import validate
+from cuda_utils import load_status, get_recommended_device
+
+
+def resolve_device(cfg: dict[str, Any], project_root: str) -> str:
+    """Resolve config model.lgbm.device='auto' to 'gpu' or 'cpu'."""
+    device = str(cfg.get("model", {}).get("lgbm", {}).get("device", "auto")).lower()
+    if device == "auto":
+        status = load_status(project_root)
+        force_cpu = cfg.get("training", {}).get("force_cpu", False)
+        force_gpu = cfg.get("training", {}).get("force_gpu", False)
+        if status:
+            force_cpu = force_cpu or status.get("force_cpu", False)
+            force_gpu = force_gpu or status.get("force_gpu", False)
+            if status.get("lightgbm_gpu_works"):
+                return "gpu"
+            if force_gpu:
+                print("[trainer] force_gpu requested but cuda_status says GPU LightGBM did not work; falling back to CPU")
+        device = get_recommended_device(force_cpu=force_cpu, force_gpu=force_gpu)
+    return device
 
 
 def load_config(path: str) -> dict[str, Any]:
@@ -265,6 +284,12 @@ def main(argv=None) -> int:
     data_root = Path(args.data_root).resolve()
     cfg["paths"]["train_dir"] = str(data_root / "train")
     cfg["paths"]["test_dir"] = str(data_root / "test")
+
+    # Resolve GPU/CPU device before any model training
+    project_root = str(Path(__file__).resolve().parent)
+    device = resolve_device(cfg, project_root)
+    cfg.setdefault("model", {}).setdefault("lgbm", {})["device"] = device
+    print(f"[trainer] LightGBM device resolved to: {device}")
 
     cache = args.cache or cfg["paths"]["cache_dir"]
     out_dir = args.output or cfg["paths"]["out_dir"]

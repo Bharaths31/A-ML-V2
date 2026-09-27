@@ -30,7 +30,7 @@ def _make_estimator(cfg: dict, positive_weight: float):
         try:
             from lightgbm import LGBMClassifier
 
-            return LGBMClassifier(
+            lgbm_kwargs = dict(
                 n_estimators=int(params["n_estimators"]),
                 learning_rate=float(params["learning_rate"]),
                 num_leaves=int(params["num_leaves"]),
@@ -44,6 +44,12 @@ def _make_estimator(cfg: dict, positive_weight: float):
                 n_jobs=-1,
                 verbosity=int(params.get("verbosity", -1)),
             )
+            device = str(params.get("device", "auto")).lower()
+            if device == "gpu":
+                lgbm_kwargs["device_type"] = "gpu"
+                lgbm_kwargs["gpu_platform_id"] = int(params.get("gpu_platform_id", 0))
+                lgbm_kwargs["gpu_device_id"] = int(params.get("gpu_device_id", 0))
+            return LGBMClassifier(**lgbm_kwargs)
         except ImportError:  # pragma: no cover
             pass
     from sklearn.ensemble import HistGradientBoostingClassifier
