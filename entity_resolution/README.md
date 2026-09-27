@@ -1,105 +1,103 @@
-# Business Entity Resolution — Amazon ML Challenge 2026
+# V2 — Business Entity Resolution (Amazon ML Challenge 2026)
 
-A precision-first, metric-aligned pipeline for multi-source business entity
-resolution. Given records from three independent sources (S1 reference, S2/S3
-candidates) it produces:
+Precision-first, profiler-driven entity resolution across 3 sources.
+Target metric: macro **F₀.₅** (precision weighted 2×).
 
-- `output/matching_results.tsv` — final matches (the leaderboard file)
-- `output/candidate_pairs.tsv` — the exact blocking candidate set fed to the model
-
-See `Documentation_template.md` at the repository root for the full methodology
-write-up, and `SOLUTION_PLAN.md` for the design blueprint.
-
-## Pipeline overview
+## Project layout
 
 ```
-sources -> [1] canonicalize -> [2] blocking cascade -> [3] pairwise features
-        -> [4] calibrated LightGBM (+ singleton model) -> [5] per-entity
-           expected-F0.5 decision engine -> [6] consistency + validated output
+entity_resolution/
+├── config.yaml               # all tunables (paths, blocking, model, selection)
+├── setup.py                  # create venv, install deps, GPU detect, stage data
+├── master_profiler.py        # CLI: integrity | profile | select | report | all
+├── master_trainer.py         # CLI: prepare | train | evaluate | predict | submit | all
+├── run_train.py              # convenience: training entry point
+├── run_test.py               # convenience: inference entry point
+├── submit.py                 # validate + package the submission zip
+├── profiler.py               # flat modules (wrap er_core)
+├── blocker.py
+├── features.py
+├── trainer.py
+├── tester.py
+├── normalizer.py
+├── metrics.py
+├── io_utils.py
+├── cuda_utils.py             # NVIDIA/CUDA detection + LightGBM GPU probe
+├── er_core/                  # ported V1 engine (normalize → block → features → model → decide)
+├── data/                     # unified train/ + test/ (from student_resource)
+├── profile/                  # profile.json, selection.json, report.md
+├── cache/                    # intermediate artifacts
+├── models/ · output/         # model bundle · submission files
+└── requirements.txt
 ```
-
-The decision engine (§5 of the plan) chooses, per Source 1 entity, between
-abstaining and predicting the top-k prefix that maximises expected F0.5,
-which is exactly the challenge metric (including the singleton 1.0/0.0
-asymmetry). Country is used only as a string-similarity feature, never a filter,
-so unseen countries (France) are handled by construction.
 
 ## Setup
 
 ```bash
-cd code/business_entity_resolution
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python setup.py            # auto CPU/GPU
+python setup.py --gpu      # force GPU attempt
+python setup.py --cpu      # force CPU
 ```
 
-## Data layout
+`setup.py` creates `.venv`, installs `requirements.txt`, detects NVIDIA/CUDA,
+records the result in `cuda_status.json`, and copies the dataset into `data/`.
 
-The pipeline expects the challenge layout:
+Activate the environment:
+- Windows CMD: `.venv\Scripts\activate.bat`
+- Windows PowerShell: `.venv\Scripts\Activate.ps1`
+- Linux/macOS: `source .venv/bin/activate`
 
-```
-dataset/
-├── train/{train_source1.tsv, train_source2.tsv, train_source3.tsv, train_ground_truth.tsv}
-└── test/{test_source1.tsv, test_source2.tsv, test_source3.tsv}
-```
-
-No dataset yet? Generate a challenge-shaped synthetic one (mimics the documented
-noise and adds France only to the test split):
+## Reproduce end-to-end
 
 ```bash
-python -m src.cli.run --stage synthdata --data-root ../../dataset \
-    --n-train 400 --n-test 200 --with-test-gt
+python master_profiler.py --stage all --data-root data --out profile
+python master_trainer.py --stage all --config config.yaml --data-root data
 ```
 
-## Run end-to-end
+- `master_profiler.py all` writes `profile/profile.json`, `profile/selection.json`,
+  `profile/report.md`.
+- `master_trainer.py all` runs canonicalization → blocking → featurization →
+  training → calibration → validation → test inference → validator.
+
+Scaling ladder (override the minimal fit set size):
 
 ```bash
-python -m src.cli.run --data-root ../../dataset
+python master_trainer.py --stage train --ladder 300k
 ```
 
-Outputs land in `output/`; reports and cached artifacts in `artifacts/`. The
-pipeline prints validation macro-F0.5, blocking recall, mean candidates per S1
-entity, and the submission validator result.
-
-## CLI stages
-
-| Command | Purpose |
-|---|---|
-| `--stage synthdata` | generate a synthetic dataset |
-| `--stage all` (default) | run stages 1–6 end-to-end |
-| `--stage validate` | run the submission validator on `output/` |
-| `--stage score --gt <file>` | score `output/matching_results.tsv` against ground truth |
-
-Useful flags: `--config <yaml>`, `--set decision.lambda=0.8`, `--seed`, `--out-dir`,
-`--cache-dir`.
-
-## Tests
+## Validate + package the submission
 
 ```bash
-python -m pytest -q
+python submit.py --team-name <team_name>            # validate, then zip
+python submit.py --team-name <team_name> --validate-only
+python submit.py --team-name <team_name> --package-only
 ```
 
-The test suite covers the exact F0.5 scorer (including the statement example),
-prefix optimality of the decision engine, canonicalization, blocking recall,
-output invariants, and a full end-to-end run.
+`submit.py`:
 
-## Reproducibility
+1. Runs the official stdlib validator `data/utils/validate_submission.py`
+   against `output/matching_results.tsv`, `output/candidate_pairs.tsv`, and
+   `data/test/`. It prints `PASS` (exit 0) or a numbered issue list (exit 1).
+2. Builds `<team_name>_submission.zip` with the required layout:
 
-- Every tunable lives in `src/config/default.yaml` (mirrored in
-  `src/config/config.py`); nothing is hard-coded in the stages.
-- Fixed seeds; LightGBM `deterministic=true`; deterministic MinHash/LSH.
-- Pinned dependencies in `requirements.txt`.
-- Stages cache versioned artifacts under `artifacts/`.
+```
+<team_name>_submission.zip
+├── output/{matching_results.tsv, candidate_pairs.tsv}
+├── code/business_entity_resolution/{src/, README.md, requirements.txt}
+└── Documentation_template.md
+```
 
-## Normalization assets & fair play
+Packaging is blocked unless validation passes (override with `--skip-validate`).
 
-All normalization assets (`src/normalize/assets/`) are hand-curated from
-common-language knowledge and shipped in-package. **No external database, API,
-geocoding service, or internet lookup is used anywhere.** See
-`src/normalize/assets/ASSETS.md` for provenance.
+## Fair-play constraints
 
-## License
+- No external data, APIs, or geocoding lookups.
+- Normalization assets are hand-curated, in-package, and documented in
+  `er_core/normalize/assets/ASSETS.md`.
+- Model: LightGBM (MIT). CPU by default; GPU when available.
 
-Code is released for the challenge submission. Runtime dependencies are
-permissive (BSD-3/MIT/Apache-2.0); see the license table in the methodology
-document. Only MIT/Apache-2.0 licensed model weights (≤ 8B parameters) may be
-added for the optional embedding feature.
+## Notes on scale
+
+The ported engine is functional end-to-end. For the full 2.2M-entity dataset on
+16 GB, run the chunked/staged path in `master_trainer.py` or use a machine with
+≥32 GB for the first full pass. The profiler is streaming and cheap on any machine.

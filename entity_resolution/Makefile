@@ -1,28 +1,34 @@
-# Business Entity Resolution — reproducible pipeline targets.
+# V2 Business Entity Resolution — reproducible pipeline targets.
 # Override PYTHON if you use a different interpreter/venv.
 PYTHON ?= python3
-DATA_ROOT ?= ../../dataset
+DATA_ROOT ?= data
+CONFIG ?= config.yaml
+TEAM ?= team
 
-.PHONY: install synthdata run test validate reproduce clean
+.PHONY: setup profile train test predict validate package all clean
 
-install:
-	$(PYTHON) -m pip install -r requirements.txt
+setup:
+	$(PYTHON) setup.py
 
-synthdata:
-	$(PYTHON) -m src.cli.run --stage synthdata --data-root $(DATA_ROOT) \
-		--n-train 400 --n-test 200 --with-test-gt
+profile:
+	$(PYTHON) master_profiler.py --stage all --data-root $(DATA_ROOT) --out profile
 
-run:
-	$(PYTHON) -m src.cli.run --data-root $(DATA_ROOT)
+train:
+	$(PYTHON) master_trainer.py --stage train --config $(CONFIG) --data-root $(DATA_ROOT)
 
 test:
-	$(PYTHON) -m pytest -q
+	$(PYTHON) -m pytest -q er_core/tests
+
+predict:
+	$(PYTHON) master_trainer.py --stage predict --config $(CONFIG) --data-root $(DATA_ROOT)
 
 validate:
-	$(PYTHON) -m src.cli.run --stage validate --data-root $(DATA_ROOT)
+	$(PYTHON) submit.py --team-name $(TEAM) --validate-only --data-root $(DATA_ROOT)
 
-# One-command reproduction: install -> synth (only if data missing) -> run -> validate.
-reproduce: install run validate
+package:
+	$(PYTHON) submit.py --team-name $(TEAM) --data-root $(DATA_ROOT)
+
+all: profile train predict package
 
 clean:
-	rm -rf artifacts output .pytest_cache
+	rm -rf cache profile output models __pycache__ .pytest_cache
