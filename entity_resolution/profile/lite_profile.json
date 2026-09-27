@@ -1,0 +1,181 @@
+{
+  "schema_version": "lite-1.0",
+  "stride": 50,
+  "generated_at": "2026-09-27T17:32:40Z",
+  "sources": {
+    "train_source1": {
+      "rows": 2206821,
+      "bytes": 210069713,
+      "fields": {
+        "sampled_rows": 44137,
+        "stride": 50,
+        "countries": {
+          "US": 26617,
+          "India": 17520
+        },
+        "name_empty_rate": 0.0,
+        "addr_empty_rate": 0.0,
+        "name_len_p50": 24.0,
+        "name_len_p95": 37.0,
+        "addr_len_p50": 41.0,
+        "addr_len_p95": 102.0,
+        "script_distribution": {
+          "ascii_latin": 44137
+        },
+        "garbage_prefix_rate": 0.0012,
+        "domain_as_name_rate": 0.0
+      }
+    },
+    "train_source2": {
+      "rows": 5034616,
+      "bytes": 489301488,
+      "fields": {
+        "sampled_rows": 100693,
+        "stride": 50,
+        "countries": {
+          "India": 40337,
+          "US": 60356
+        },
+        "name_empty_rate": 0.0,
+        "addr_empty_rate": 0.03402,
+        "name_len_p50": 25.0,
+        "name_len_p95": 40.0,
+        "addr_len_p50": 37.0,
+        "addr_len_p95": 97.0,
+        "script_distribution": {
+          "devanagari": 5403,
+          "ascii_latin": 85398,
+          "extended_latin": 9892
+        },
+        "garbage_prefix_rate": 0.0626,
+        "domain_as_name_rate": 0.0395
+      }
+    },
+    "train_source3": {
+      "rows": 5285603,
+      "bytes": 503705637,
+      "fields": {
+        "sampled_rows": 105713,
+        "stride": 50,
+        "countries": {
+          "US": 63098,
+          "India": 42615
+        },
+        "name_empty_rate": 0.0,
+        "addr_empty_rate": 0.033,
+        "name_len_p50": 25.0,
+        "name_len_p95": 42.0,
+        "addr_len_p50": 42.0,
+        "addr_len_p95": 92.0,
+        "script_distribution": {
+          "ascii_latin": 93721,
+          "extended_latin": 8842,
+          "devanagari": 3150
+        },
+        "garbage_prefix_rate": 0.0425,
+        "domain_as_name_rate": 0.0403
+      }
+    },
+    "test_source1": {
+      "rows": 1732544,
+      "bytes": 175022086,
+      "fields": {
+        "sampled_rows": 34651,
+        "stride": 50,
+        "countries": {
+          "US": 13247,
+          "India": 16195,
+          "France": 5209
+        },
+        "name_empty_rate": 0.0,
+        "addr_empty_rate": 0.0,
+        "name_len_p50": 24.0,
+        "name_len_p95": 36.0,
+        "addr_len_p50": 50.0,
+        "addr_len_p95": 106.0,
+        "script_distribution": {
+          "ascii_latin": 33836,
+          "extended_latin": 815
+        },
+        "garbage_prefix_rate": 0.0072,
+        "domain_as_name_rate": 0.0
+      }
+    },
+    "test_source2": {
+      "rows": 4887273,
+      "bytes": 509456422,
+      "fields": {
+        "sampled_rows": 97746,
+        "stride": 50,
+        "countries": {
+          "India": 46096,
+          "US": 37463,
+          "France": 14187
+        },
+        "name_empty_rate": 0.0,
+        "addr_empty_rate": 0.02599,
+        "name_len_p50": 25.0,
+        "name_len_p95": 41.0,
+        "addr_len_p50": 43.0,
+        "addr_len_p95": 99.0,
+        "script_distribution": {
+          "ascii_latin": 79136,
+          "devanagari": 6270,
+          "extended_latin": 12340
+        },
+        "garbage_prefix_rate": 0.0687,
+        "domain_as_name_rate": 0.0315
+      }
+    },
+    "test_source3": {
+      "rows": 5082316,
+      "bytes": 506002772,
+      "fields": {
+        "sampled_rows": 101647,
+        "stride": 50,
+        "countries": {
+          "India": 48185,
+          "US": 38782,
+          "France": 14680
+        },
+        "name_empty_rate": 0.0,
+        "addr_empty_rate": 0.02745,
+        "name_len_p50": 25.0,
+        "name_len_p95": 42.0,
+        "addr_len_p50": 44.0,
+        "addr_len_p95": 95.0,
+        "script_distribution": {
+          "devanagari": 3645,
+          "ascii_latin": 86900,
+          "extended_latin": 11102
+        },
+        "garbage_prefix_rate": 0.0482,
+        "domain_as_name_rate": 0.031
+      }
+    }
+  },
+  "ground_truth": {
+    "rows": 2206821,
+    "singleton_rate": 0.05585,
+    "singleton_count": 123247,
+    "nonempty": 2083574,
+    "avg_fanout": 3.666,
+    "max_fanout": 11,
+    "fanout_distribution": {
+      "1": 119157,
+      "2": 375212,
+      "3": 530841,
+      "4": 484115,
+      "5": 321957,
+      "6": 164868,
+      "7": 63968,
+      "8": 18680,
+      "9": 4205,
+      "10": 534,
+      "11": 37
+    },
+    "has_s2_rate": 0.9211,
+    "has_s3_rate": 0.9314,
+    "both_rate": 0.8524
+  }
+}
