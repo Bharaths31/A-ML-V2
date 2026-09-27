@@ -147,13 +147,14 @@ PIN_CAP = 20
 FTCITY_CAP = 20
 
 
-def build_pool(paths, country: str, max_rows: int = 0):
-    b_nos = defaultdict(list)
-    b_srt = defaultdict(list)
-    b_pin = defaultdict(list)
-    b_ftpin = defaultdict(list)
-    b_ftcity = defaultdict(list)
-    fields = {}
+def build_pool_all(paths, countries, max_rows: int = 0):
+    """Single scan over the pool files, indexing every requested country at once.
+
+    Returns {country: (b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields)}.
+    One scan instead of one-per-country (critical on low-core CPUs).
+    """
+    idx = {c: [defaultdict(list) for _ in range(5)] for c in countries}
+    fields = {c: {} for c in countries}
     for path in paths:
         with open(path, "r", encoding="utf-8") as f:
             next(f, None)
@@ -163,15 +164,17 @@ def build_pool(paths, country: str, max_rows: int = 0):
                 p = line.rstrip("\n").split("\t")
                 if len(p) != 4:
                     continue
-                eid, name, addr, c = p[0], p[1], p[2], p[3]
-                if c != country:
+                c = p[3]
+                if c not in idx:
                     continue
+                eid, name, addr = p[0], p[1], p[2]
                 nt = toks(name)
                 ns = nosuffix(nt)
                 sk = sorted_key(nt)
                 pi = pin(addr)
                 ci = city(addr)
                 ft = nt[0] if nt else ""
+                b_nos, b_srt, b_pin, b_ftpin, b_ftcity = idx[c]
                 if ns:
                     b_nos[ns].append(eid)
                 if sk:
@@ -182,8 +185,8 @@ def build_pool(paths, country: str, max_rows: int = 0):
                         b_ftpin[(ft, pi)].append(eid)
                 if ci and ft:
                     b_ftcity[(ft, ci)].append(eid)
-                fields[eid] = (nt, toks(addr), pi, house_no(addr), ci, ft)
-    return b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields
+                fields[c][eid] = (nt, toks(addr), pi, house_no(addr), ci, ft)
+    return {c: (idx[c][0], idx[c][1], idx[c][2], idx[c][3], idx[c][4], fields[c]) for c in countries}
 
 
 def gen_candidates(nt, ns, sk, pi, ci, ft, idx):
@@ -282,62 +285,54 @@ def main(argv=None) -> int:
     val_ids = ids[n_fit + n_cal:]
     log(f"sample: fit={len(fit_ids)} calib={len(cal_ids)} val={len(val_ids)}")
 
-    def collect(country_ids, country):
-        """Return list of (s1_id, cands, feats, truth)."""
-        results = []
-        idx = build_pool([str(train_dir / "train_source2.tsv"),
-                          str(train_dir / "train_source3.tsv")], country, args.max_rows)
-        b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields = idx
-        for eid in country_ids:
-            s1 = s1_train[eid]
-            nt, at, pi, hn, ci, ft, _ = s1
-            cands = gen_candidates(nt, nosuffix(nt), sorted_key(nt), pi, ci, ft,
-                                   (b_nos, b_srt, b_pin, b_ftpin, b_ftcity))
-            truth = set(gt.get(eid, ()))
-            feats = [pair_features(s1, fields, cid) for cid in cands]
-            results.append((eid, cands, feats, truth))
-        return results
-
-    # gather by country so we hold only one pool at a time
+    # gather by country
     fit_by_c = {"US": [], "India": []}
     cal_by_c = {"US": [], "India": []}
     val_by_c = {"US": [], "India": []}
     for eid in fit_ids:
-        fit_by_c[s1_train[eid][6]].append(eid)
+        fit_by_c.setdefault(s1_train[eid][6], []).append(eid)
     for eid in cal_ids:
-        cal_by_c[s1_train[eid][6]].append(eid)
+        cal_by_c.setdefault(s1_train[eid][6], []).append(eid)
     for eid in val_ids:
-        val_by_c[s1_train[eid][6]].append(eid)
+        val_by_c.setdefault(s1_train[eid][6], []).append(eid)
 
     fit_rows = []          # (feats, label)
     cal_ents = []          # (cands, feats, truth)
     val_ents = []          # (cands, feats, truth)
+    log("building TRAIN pool (single scan)...")
+    train_idx = build_pool_all(
+        [str(train_dir / "train_source2.tsv"), str(train_dir / "train_source3.tsv")],
+        ["US", "India"], args.max_rows)
+
+    def _gen(s1, fields, idx5):
+        b_nos, b_srt, b_pin, b_ftpin, b_ftcity = idx5
+        nt, at, pi, hn, ci, ft, _ = s1
+        cands = gen_candidates(nt, nosuffix(nt), sorted_key(nt), pi, ci, ft,
+                               (b_nos, b_srt, b_pin, b_ftpin, b_ftcity))
+        return cands
+
     for country in ["US", "India"]:
-        log(f"building TRAIN pool for {country}...")
-        idx = build_pool([str(train_dir / "train_source2.tsv"),
-                          str(train_dir / "train_source3.tsv")], country, args.max_rows)
-        b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields = idx
-        log(f"  pool={len(fields)}")
-
-        def process(id_list, sink_rows, sink_ents, need_feats=True):
-            for eid in id_list:
-                s1 = s1_train[eid]
-                nt, at, pi, hn, ci, ft, _ = s1
-                cands = gen_candidates(nt, nosuffix(nt), sorted_key(nt), pi, ci, ft,
-                                       (b_nos, b_srt, b_pin, b_ftpin, b_ftcity))
-                truth = set(gt.get(eid, ()))
-                feats = np.asarray([pair_features(s1, fields, cid) for cid in cands],
-                                   dtype=np.float32) if cands else np.zeros((0, N_FEATURES), np.float32)
-                if sink_rows is not None:
-                    for j, cid in enumerate(cands):
-                        sink_rows.append((feats[j], 1 if cid in truth else 0))
-                if sink_ents is not None:
-                    sink_ents.append((cands, feats, truth))
-
-        process(fit_by_c[country], fit_rows, None)
-        process(cal_by_c[country], None, cal_ents)
-        process(val_by_c[country], None, val_ents)
-        del idx
+        b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields = train_idx[country]
+        log(f"  {country} pool={len(fields)}")
+        idx5 = (b_nos, b_srt, b_pin, b_ftpin, b_ftcity)
+        for eid in fit_by_c.get(country, []):
+            s1 = s1_train[eid]
+            truth = gt.get(eid, ())
+            for cid in _gen(s1, fields, idx5):
+                fit_rows.append((pair_features(s1, fields, cid), 1 if cid in truth else 0))
+        for eid in cal_by_c.get(country, []):
+            s1 = s1_train[eid]
+            cands = _gen(s1, fields, idx5)
+            feats = np.asarray([pair_features(s1, fields, c) for c in cands],
+                               dtype=np.float32) if cands else np.zeros((0, N_FEATURES), np.float32)
+            cal_ents.append((cands, feats, set(gt.get(eid, ()))))
+        for eid in val_by_c.get(country, []):
+            s1 = s1_train[eid]
+            cands = _gen(s1, fields, idx5)
+            feats = np.asarray([pair_features(s1, fields, c) for c in cands],
+                               dtype=np.float32) if cands else np.zeros((0, N_FEATURES), np.float32)
+            val_ents.append((cands, feats, set(gt.get(eid, ()))))
+    del train_idx
 
     log(f"training pairs collected: {len(fit_rows)}")
     X = np.asarray([r[0] for r in fit_rows], dtype=np.float32) if fit_rows else np.zeros((0, N_FEATURES), np.float32)
@@ -454,12 +449,13 @@ def main(argv=None) -> int:
          open(candidate_path, "w", encoding="utf-8", newline="\n") as fc:
         fm.write("source1_entity_id\tmatched_entity_ids\n")
         fc.write("source1_entity_id\tcandidate_entity_ids\n")
+        log("building TEST pool (single scan)...")
+        test_idx = build_pool_all(
+            [str(test_dir / "test_source2.tsv"), str(test_dir / "test_source3.tsv")],
+            ["US", "India", "France"], args.max_rows)
         for country in ["US", "India", "France"]:
-            log(f"building TEST pool for {country}...")
-            b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields = build_pool(
-                [str(test_dir / "test_source2.tsv"), str(test_dir / "test_source3.tsv")],
-                country, args.max_rows)
-            log(f"  pool={len(fields)}")
+            b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields = test_idx[country]
+            log(f"  {country} pool={len(fields)}")
             n = 0
             for eid, s1 in s1_test.items():
                 if s1[6] != country:
@@ -476,7 +472,7 @@ def main(argv=None) -> int:
                 pred = decide(cands, feats, best_lam)
                 fm.write(f"{eid}\t{','.join(pred)}\n")
             log(f"  processed {country}: {n}")
-            del b_nos, b_srt, b_pin, b_ftpin, b_ftcity, fields
+        del test_idx
 
     log(f"wrote outputs; elapsed {time.time()-t0:.1f}s")
 
